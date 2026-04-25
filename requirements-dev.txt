@@ -1,0 +1,7 @@
+-r requirements.txt
+
+# Developer tools
+pyinstaller>=6.6   # build desktop distributables
+
+# scripts/fetch_mpv.py extracts libmpv via 7-Zip and needs no Python deps
+# (uses C:\Program Files\7-Zip\7z.exe if installed, else fetches 7zr.exe).
