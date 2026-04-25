@@ -139,3 +139,4 @@ pyinstaller packaging/build.spec
   third-party list and redistribution notes.
 - python-mpv is **AGPLv3** — note that if you intend to ship closed-source
   binaries, you should review whether AGPL obligations apply.
+
