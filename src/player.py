@@ -6,6 +6,7 @@ from PySide6.QtCore import QAbstractAnimation, QEasingCurve, QEvent, QPoint, QPa
 from PySide6.QtGui import QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
+    QFrame,
     QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
