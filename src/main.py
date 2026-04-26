@@ -5,7 +5,7 @@ import devlog
 devlog.maybe_enable_from_argv(sys.argv)
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QIcon, QKeySequence, QPainter, QPixmap, QShortcut
+from PySide6.QtGui import QFont, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QApplication,
@@ -726,6 +726,17 @@ def _enable_dark_titlebar(win):
 def run_app():
     app = QApplication(sys.argv)
     app.aboutToQuit.connect(lambda: workers.shutdown_workers(250))
+
+    # Set the system-native font per platform to avoid Qt warnings about
+    # missing font families ("Segoe UI Variable Text" doesn't exist on macOS).
+    if sys.platform == "darwin":
+        app.setFont(QFont(".AppleSystemUIFont", 13))
+    elif sys.platform == "win32":
+        f = QFont("Segoe UI Variable Text", 10)
+        if not f.exactMatch():
+            f = QFont("Segoe UI", 10)
+        app.setFont(f)
+
     qss = (RESOURCE_DIR / "styles.qss").read_text()
     app.setStyleSheet(qss)
 
