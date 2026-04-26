@@ -9,6 +9,29 @@ from PySide6.QtCore import QObject, Qt, Signal
 _log = logging.getLogger(__name__)
 
 
+def _friendly_error(exc: Exception) -> str:
+    """Convert a requests exception into a short, human-readable message."""
+    if isinstance(exc, requests.exceptions.HTTPError):
+        code = exc.response.status_code if exc.response is not None else 0
+        descriptions = {
+            403: "Access denied (403) — the server blocked the download.",
+            404: "File not found (404) — the stream may have expired.",
+            429: "Too many requests (429) — try again in a moment.",
+            500: "Server error (500) — the streaming server is having issues.",
+            502: "Bad gateway (502) — the streaming server is unreachable.",
+            503: "Service unavailable (503) — the server is overloaded.",
+            520: "Server error (520) — the streaming server returned an unknown error.",
+        }
+        return descriptions.get(code, f"Server error ({code}).")
+    if isinstance(exc, requests.exceptions.ConnectTimeout):
+        return "Connection timed out. Check your network."
+    if isinstance(exc, requests.exceptions.ReadTimeout):
+        return "Download stalled — the server stopped sending data."
+    if isinstance(exc, requests.exceptions.ConnectionError):
+        return "Connection lost. Check your network and try again."
+    return str(exc)
+
+
 class _DownloadSignals(QObject):
     progress = Signal(str, int, int)  # id, bytes_done, total_bytes
     done = Signal(str, str)           # id, dest_path
@@ -38,6 +61,7 @@ class _DownloadTask:
 
     def _run(self):
         tmp_path = self.dest_path + ".part"
+        failed = False
         try:
             r = requests.get(self.url, stream=True, timeout=(15, 60))
             r.raise_for_status()
@@ -57,11 +81,13 @@ class _DownloadTask:
             os.replace(tmp_path, self.dest_path)
             self._signals.done.emit(self.download_id, self.dest_path)
         except Exception as exc:
-            _log.exception("Download failed for %s", self.url)
+            failed = True
+            msg = _friendly_error(exc)
+            _log.debug("Download failed id=%s: %s", self.download_id, exc)
             if not self._cancelled:
-                self._signals.error.emit(self.download_id, str(exc))
+                self._signals.error.emit(self.download_id, msg)
         finally:
-            if self._cancelled:
+            if self._cancelled or failed:
                 try:
                     os.unlink(tmp_path)
                 except OSError:
