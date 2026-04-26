@@ -892,3 +892,84 @@ QListWidget[collapsed="true"]::item {
 }
 
 QStatusBar { background: #0a0a0a; color: #71717a; }
+
+/* ── Downloads page ── */
+
+QFrame#downloadRow {
+  background: #111216;
+  border: 1px solid #23242b;
+  border-radius: 12px;
+}
+
+QLabel#downloadTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f4f4f5;
+}
+
+QLabel#downloadSize {
+  font-size: 11px;
+  color: #a1a1aa;
+}
+
+QProgressBar#downloadProgress {
+  background: #27272a;
+  border: none;
+  border-radius: 3px;
+}
+
+QProgressBar#downloadProgress::chunk {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+    stop:0 #e50914, stop:1 #ff4d5a);
+  border-radius: 3px;
+}
+
+QProgressBar#downloadProgress[failed="true"] {
+  background: #27272a;
+}
+
+QProgressBar#downloadProgress[failed="true"]::chunk {
+  background: #52525b;
+}
+
+QPushButton#downloadCancelBtn {
+  background: transparent;
+  color: #71717a;
+  border: 1px solid #3f3f46;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+QPushButton#downloadCancelBtn:hover {
+  background: #27272a;
+  color: #f4f4f5;
+  border: 1px solid #e50914;
+}
+
+QPushButton#downloadOpenBtn {
+  background: transparent;
+  color: #a1a1aa;
+  border: 1px solid #3f3f46;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+QPushButton#downloadOpenBtn:hover {
+  background: #27272a;
+  color: #f4f4f5;
+  border: 1px solid #4b5563;
+}
+
+/* ── Resume toast ── */
+
+QFrame#playerResumeToast {
+  background: rgba(9, 9, 11, 0.92);
+  border: 1px solid #31323a;
+  border-radius: 12px;
+}
+
+QLabel#playerResumeToastLabel {
+  color: #d4d4d8;
+  font-size: 12px;
+  font-weight: 600;
+}

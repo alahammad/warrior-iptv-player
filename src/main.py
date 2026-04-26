@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
 import config
 import workers
 from downloader import DownloadManager
+from downloads_page import DownloadsPage
 from pages import ContinueWatchingPage, LiveTVPage, MoviesPage, SeriesDetailPage, SeriesPage
 from paths import APP_DIR, RESOURCE_DIR, purge_profile
 from player import MpvPlayerOverlay
@@ -271,7 +272,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Warrior IPTV Player")
         self.resize(1400, 900)
         self.setMinimumSize(920, 620)
-        self._sidebar_labels = ("Live TV", "Movies", "Series", "Continue")
+        self._sidebar_labels = ("Live TV", "Movies", "Series", "Continue", "Downloads")
         self._sidebar_expanded = True
         self._sidebar_user_collapsed = False
 
@@ -326,6 +327,7 @@ class MainWindow(QMainWindow):
             ("movies.svg", self._sidebar_labels[1]),
             ("series.svg", self._sidebar_labels[2]),
             ("continue.svg", self._sidebar_labels[3]),
+            ("downloads.svg", self._sidebar_labels[4]),
         )):
             btn = QPushButton(label)
             btn.setObjectName("navBtn")
@@ -385,11 +387,14 @@ class MainWindow(QMainWindow):
         self.series_detail.back.connect(lambda: self.stack.setCurrentWidget(self.series))
         self.continue_page = ContinueWatchingPage(xtream, self)
 
-        self.stack.addWidget(self.live)
-        self.stack.addWidget(self.movies)
-        self.stack.addWidget(self.series)
-        self.stack.addWidget(self.continue_page)
-        self.stack.addWidget(self.series_detail)
+        self.downloads_page = DownloadsPage(self.stack)
+
+        self.stack.addWidget(self.live)          # idx 0
+        self.stack.addWidget(self.movies)        # idx 1
+        self.stack.addWidget(self.series)        # idx 2
+        self.stack.addWidget(self.continue_page) # idx 3
+        self.stack.addWidget(self.series_detail) # idx 4  (no nav button)
+        self.stack.addWidget(self.downloads_page) # idx 5
         h.addWidget(self.stack, 1)
 
         self.setStatusBar(QStatusBar())
@@ -402,15 +407,22 @@ class MainWindow(QMainWindow):
 
         self._download_manager = DownloadManager(self)
         self._download_manager.download_progress.connect(self._on_download_progress)
+        self._download_manager.download_progress.connect(self.downloads_page.on_progress)
         self._download_manager.download_done.connect(self._on_download_done)
+        self._download_manager.download_done.connect(self.downloads_page.on_done)
         self._download_manager.download_error.connect(self._on_download_error)
+        self._download_manager.download_error.connect(self.downloads_page.on_error)
+        self.downloads_page.cancel_download.connect(self._download_manager.cancel)
         self._download_dir = str(APP_DIR / "downloads")
 
         self._sync_sidebar_visuals()
         self._update_responsive_shell()
 
     def _switch(self, idx: int):
-        self.stack.setCurrentIndex(idx)
+        if idx == 4:
+            self.stack.setCurrentWidget(self.downloads_page)
+        else:
+            self.stack.setCurrentIndex(idx)
         if idx == 3:
             self.continue_page.refresh()
 
@@ -497,9 +509,11 @@ class MainWindow(QMainWindow):
         is_live: bool,
         playlist: list[dict] | None = None,
         index: int = 0,
+        resume_pos: float = 0.0,
+        on_position_save=None,
     ):
         overlay = self._ensure_player_overlay()
-        ok = overlay.show_and_play(url, title, is_live, playlist, index)
+        ok = overlay.show_and_play(url, title, is_live, playlist, index, resume_pos, on_position_save)
         if not ok:
             self.statusBar().showMessage(
                 "In-app player unavailable - falling back to VLC",
@@ -545,9 +559,9 @@ class MainWindow(QMainWindow):
             return
         self._download_dir = os.path.dirname(dest)
         download_id = self._download_manager.start_download(url, dest)
-        self.statusBar().showMessage(
-            f"Downloading '{title}'…  (0%)", 0
-        )
+        self.downloads_page.add_download(download_id, title, dest)
+        self._switch(4)
+        self.nav_buttons[4].setChecked(True)
         self._pending_downloads: dict = getattr(self, "_pending_downloads", {})
         self._pending_downloads[download_id] = {"title": title, "dest": dest}
 
