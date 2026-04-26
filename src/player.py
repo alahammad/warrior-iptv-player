@@ -1,6 +1,11 @@
+import locale
 import logging
 import os
 import sys
+
+# mpv requires the C numeric locale for correct decimal parsing.
+# Must be set before the mpv module is imported.
+locale.setlocale(locale.LC_NUMERIC, "C")
 
 from PySide6.QtCore import QAbstractAnimation, QEasingCurve, QEvent, QPoint, QParallelAnimationGroup, QPropertyAnimation, QSignalBlocker, QSize, QTimer, Qt, Signal
 from PySide6.QtGui import QIcon, QPainter, QPixmap
