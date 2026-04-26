@@ -1,7 +1,5 @@
 import sys
 import os
-import ctypes
-from ctypes import wintypes
 
 import devlog
 devlog.maybe_enable_from_argv(sys.argv)
@@ -13,6 +11,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
     QDialog,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QInputDialog,
@@ -32,8 +31,9 @@ from PySide6.QtWidgets import (
 
 import config
 import workers
+from downloader import DownloadManager
 from pages import ContinueWatchingPage, LiveTVPage, MoviesPage, SeriesDetailPage, SeriesPage
-from paths import RESOURCE_DIR, purge_profile
+from paths import APP_DIR, RESOURCE_DIR, purge_profile
 from player import MpvPlayerOverlay
 from xtream import XtreamClient
 
@@ -399,6 +399,13 @@ class MainWindow(QMainWindow):
         focus_search_alt = QShortcut(QKeySequence("Ctrl+K"), self)
         focus_search_alt.activated.connect(self._focus_active_search)
         self.player_overlay = None
+
+        self._download_manager = DownloadManager(self)
+        self._download_manager.download_progress.connect(self._on_download_progress)
+        self._download_manager.download_done.connect(self._on_download_done)
+        self._download_manager.download_error.connect(self._on_download_error)
+        self._download_dir = str(APP_DIR / "downloads")
+
         self._sync_sidebar_visuals()
         self._update_responsive_shell()
 
@@ -509,7 +516,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self,
                 "VLC not found",
-                "VLC is not installed on this PC.\n\n"
+                "VLC is not installed.\n\n"
                 "Install VLC from https://www.videolan.org/vlc/ "
                 "or use the built-in player instead.",
             )
@@ -521,6 +528,58 @@ class MainWindow(QMainWindow):
                 "Could not launch VLC",
                 "VLC was found but failed to start. Please use the built-in player.",
             )
+
+    def download_movie(self, url: str, title: str, ext: str = "mp4"):
+        import re
+
+        safe_title = re.sub(r'[\\/*?:"<>|]', "_", title).strip() or "movie"
+        default_name = f"{safe_title}.{ext}"
+        os.makedirs(self._download_dir, exist_ok=True)
+        dest, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Movie",
+            os.path.join(self._download_dir, default_name),
+            f"Video Files (*.{ext});;All Files (*)",
+        )
+        if not dest:
+            return
+        self._download_dir = os.path.dirname(dest)
+        download_id = self._download_manager.start_download(url, dest)
+        self.statusBar().showMessage(
+            f"Downloading '{title}'…  (0%)", 0
+        )
+        self._pending_downloads: dict = getattr(self, "_pending_downloads", {})
+        self._pending_downloads[download_id] = {"title": title, "dest": dest}
+
+    def _on_download_progress(self, download_id: str, done: int, total: int):
+        pending = getattr(self, "_pending_downloads", {})
+        info = pending.get(download_id, {})
+        title = info.get("title", download_id)
+        pct = int(done / total * 100) if total else 0
+        self.statusBar().showMessage(
+            f"Downloading '{title}'…  ({pct}%)", 0
+        )
+
+    def _on_download_done(self, download_id: str, dest_path: str):
+        pending = getattr(self, "_pending_downloads", {})
+        info = pending.pop(download_id, {})
+        title = info.get("title", download_id)
+        self.statusBar().showMessage(
+            f"Download complete: '{title}'", 6000
+        )
+
+    def _on_download_error(self, download_id: str, message: str):
+        pending = getattr(self, "_pending_downloads", {})
+        info = pending.pop(download_id, {})
+        title = info.get("title", download_id)
+        self.statusBar().showMessage(
+            f"Download failed for '{title}': {message}", 8000
+        )
+        QMessageBox.warning(
+            self,
+            "Download Failed",
+            f"Could not download '{title}':\n{message}",
+        )
 
     def _logout(self):
         active = config.get_active(self.config)
@@ -620,6 +679,8 @@ def _enable_dark_titlebar(win):
     if sys.platform != "win32":
         return
     try:
+        import ctypes
+        from ctypes import wintypes
         hwnd = int(win.winId())
         value = ctypes.c_int(1)
         dwmapi = ctypes.windll.dwmapi

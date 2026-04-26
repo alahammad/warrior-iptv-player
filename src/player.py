@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 
 from PySide6.QtCore import QAbstractAnimation, QEasingCurve, QEvent, QPoint, QParallelAnimationGroup, QPropertyAnimation, QSignalBlocker, QSize, QTimer, Qt, Signal
 from PySide6.QtGui import QIcon, QPainter, QPixmap
@@ -19,6 +20,7 @@ from PySide6.QtWidgets import (
 
 from paths import APP_DIR, RESOURCE_DIR
 
+# Windows: add dll directories so mpv-2.dll is found
 _dll_dirs = {str(APP_DIR), str(RESOURCE_DIR)}
 os.environ["PATH"] = os.pathsep.join(_dll_dirs) + os.pathsep + os.environ.get("PATH", "")
 if hasattr(os, "add_dll_directory"):
@@ -27,6 +29,16 @@ if hasattr(os, "add_dll_directory"):
             os.add_dll_directory(_d)
         except (OSError, FileNotFoundError):
             pass
+
+# macOS: add Homebrew library paths so libmpv.dylib is found
+if sys.platform == "darwin":
+    _mac_lib_dirs = ["/opt/homebrew/lib", "/usr/local/lib"]
+    _existing_dyld = os.environ.get("DYLD_LIBRARY_PATH", "")
+    _extra = os.pathsep.join(d for d in _mac_lib_dirs if os.path.isdir(d))
+    if _extra:
+        os.environ["DYLD_LIBRARY_PATH"] = (
+            _extra + (os.pathsep + _existing_dyld if _existing_dyld else "")
+        )
 
 
 def _asset_path(*parts: str) -> str:

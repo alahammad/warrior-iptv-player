@@ -225,6 +225,14 @@ class _BasePage(QWidget):
         else:
             self.parent_window.play_in_vlc(url)
 
+    def _on_download(self, item):
+        if self.kind != "vod":
+            return
+        url = self.xtream.stream_url(self.kind, self._id_of(item), self._ext_of(item))
+        title = self._name_of(item)
+        ext = self._ext_of(item)
+        self.parent_window.download_movie(url, title, ext)
+
     def _clear_layout(self):
         self._lazy_queue = []
         self._lazy_index = 0
@@ -509,6 +517,7 @@ class _BasePage(QWidget):
                 on_click=lambda it=item: self._on_play(it, "app"),
                 on_play_app=lambda it=item: self._on_play(it, "app"),
                 on_play_vlc=lambda it=item: self._on_play(it, "vlc"),
+                on_download=(lambda it=item: self._on_download(it)) if self.kind == "vod" else None,
             )
         return card
 
@@ -536,6 +545,7 @@ class _BasePage(QWidget):
             on_click=lambda it=item: self._on_play(it, "app"),
             on_play_app=lambda it=item: self._on_play(it, "app"),
             on_play_vlc=lambda it=item: self._on_play(it, "vlc"),
+            on_download=(lambda it=item: self._on_download(it)) if self.kind == "vod" else None,
         )
 
     def _render_grid(self, items_to_render: list):
