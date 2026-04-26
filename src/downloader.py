@@ -200,6 +200,7 @@ class DownloadManager(QObject):
     download_progress = Signal(str, int, int)
     download_done = Signal(str, str)
     download_error = Signal(str, str)
+    active_count_changed = Signal(int)  # emitted whenever in-flight + queued count changes
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -225,6 +226,7 @@ class DownloadManager(QObject):
                 # Queue it; will start automatically when a slot opens.
                 self._queue.append((download_id, url, dest_path))
                 _log.info("Download queued id=%s (slot busy)", download_id)
+        self.active_count_changed.emit(self.active_count)
         return download_id
 
     def cancel(self, download_id: str):
@@ -234,6 +236,7 @@ class DownloadManager(QObject):
             task = self._tasks.pop(download_id, None)
         if task:
             task.cancel()
+        self.active_count_changed.emit(self.active_count)
 
     def cancel_all(self):
         with self._lock:
@@ -242,6 +245,7 @@ class DownloadManager(QObject):
             self._tasks.clear()
         for task in tasks:
             task.cancel()
+        self.active_count_changed.emit(0)
 
     def _active_count(self) -> int:
         return len(self._tasks)
@@ -251,12 +255,14 @@ class DownloadManager(QObject):
             self._tasks.pop(download_id, None)
         self.download_done.emit(download_id, dest_path)
         self._start_next()
+        self.active_count_changed.emit(self.active_count)
 
     def _on_error(self, download_id: str, message: str):
         with self._lock:
             self._tasks.pop(download_id, None)
         self.download_error.emit(download_id, message)
         self._start_next()
+        self.active_count_changed.emit(self.active_count)
 
     def _start_next(self):
         with self._lock:

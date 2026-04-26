@@ -159,6 +159,14 @@ QPushButton#navBtn[collapsed="true"] {
   qproperty-iconSize: 22px;
 }
 
+QLabel#dlBadge {
+  background: #e50914;
+  color: #ffffff;
+  border-radius: 8px;
+  font-size: 9px;
+  font-weight: 700;
+}
+
 QFrame#sidebarDivider {
   color: #23242a;
   background: #23242a;
