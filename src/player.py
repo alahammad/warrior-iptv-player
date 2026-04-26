@@ -682,7 +682,7 @@ class MpvPlayerOverlay(QWidget):
             return self._mpv
         if not MPV_AVAILABLE:
             return None
-        self._mpv = mpv.MPV(
+        opts: dict = dict(
             wid=int(self.video.winId()),
             log_handler=_mpv_log_handler,
             input_default_bindings=False,
@@ -695,6 +695,13 @@ class MpvPlayerOverlay(QWidget):
             user_agent="Mozilla/5.0",
             keep_open="yes",
         )
+        # On macOS, explicitly request the GPU/Cocoa backend so mpv doesn't
+        # try to create a standalone Cocoa window (which causes bus errors on
+        # some macOS versions when the wid is already provided).
+        if sys.platform == "darwin":
+            opts["vo"] = "gpu"
+            opts["gpu_context"] = "cocoa"
+        self._mpv = mpv.MPV(**opts)
         return self._mpv
 
     def _dispose_mpv(self):
