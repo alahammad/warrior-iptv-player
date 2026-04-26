@@ -137,6 +137,7 @@ class PosterCard(QFrame):
     clicked = Signal()
     play_app = Signal()
     play_vlc = Signal()
+    download = Signal()
 
     def __init__(
         self,
@@ -160,6 +161,7 @@ class PosterCard(QFrame):
         self._click_handler = None
         self._play_app_handler = None
         self._play_vlc_handler = None
+        self._download_handler = None
         self._synopsis_loader = None
         self._synopsis_requested = False
         self._synopsis_loading = False
@@ -279,8 +281,18 @@ class PosterCard(QFrame):
         self.vlc_btn.setFixedHeight(24)
         self.vlc_btn.clicked.connect(self._handle_play_vlc)
 
+        self.download_btn = QPushButton("DL", self.actions_widget)
+        self.download_btn.setObjectName("cardActionSecondary")
+        self.download_btn.setCursor(Qt.PointingHandCursor)
+        self.download_btn.setFixedHeight(24)
+        self.download_btn.setFixedWidth(30)
+        self.download_btn.setToolTip("Download")
+        self.download_btn.clicked.connect(self._handle_download)
+        self.download_btn.setVisible(False)
+
         actions.addWidget(self.app_btn, 1)
         actions.addWidget(self.vlc_btn, 1)
+        actions.addWidget(self.download_btn)
         layout.addWidget(self.actions_widget)
         self.actions_widget.setVisible(show_actions)
 
@@ -298,11 +310,14 @@ class PosterCard(QFrame):
         on_click=None,
         on_play_app=None,
         on_play_vlc=None,
+        on_download=None,
     ):
         self._click_handler = on_click
         self._play_app_handler = on_play_app
         self._play_vlc_handler = on_play_vlc
+        self._download_handler = on_download
         self._synopsis_loader = synopsis_loader
+        self.download_btn.setVisible(on_download is not None and self._show_actions)
         self._synopsis_requested = False
         self._synopsis_loading = False
         if fallback is not None:
@@ -361,6 +376,11 @@ class PosterCard(QFrame):
         self.play_vlc.emit()
         if self._play_vlc_handler:
             self._play_vlc_handler()
+
+    def _handle_download(self):
+        self.download.emit()
+        if self._download_handler:
+            self._download_handler()
 
     def mousePressEvent(self, ev):
         if ev.button() == Qt.LeftButton:
