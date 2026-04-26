@@ -132,4 +132,9 @@ for candidate in /opt/homebrew/lib /usr/local/lib; do
     fi
 done
 
+# mpv requires LC_NUMERIC=C (dot as decimal separator) or it segfaults.
+# QApplication resets the locale on startup, so we force it at the shell
+# level as a hard backstop before Python even starts.
+export LC_NUMERIC=C
+
 exec "$PYTHON" "$REPO_DIR/src/main.py" "$@"

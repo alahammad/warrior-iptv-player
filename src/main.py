@@ -1,3 +1,4 @@
+import locale
 import sys
 import os
 
@@ -726,6 +727,12 @@ def _enable_dark_titlebar(win):
 def run_app():
     app = QApplication(sys.argv)
     app.aboutToQuit.connect(lambda: workers.shutdown_workers(250))
+
+    # QApplication.__init__ calls setlocale(LC_ALL, "") internally, which
+    # resets LC_NUMERIC to the system locale. mpv requires LC_NUMERIC="C"
+    # (dot as decimal separator) — a non-C locale causes a segfault at startup.
+    # Must be called AFTER QApplication is created.
+    locale.setlocale(locale.LC_NUMERIC, "C")
 
     # Set the system-native font per platform to avoid Qt warnings about
     # missing font families ("Segoe UI Variable Text" doesn't exist on macOS).
