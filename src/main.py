@@ -202,6 +202,9 @@ class XtreamLoginDialog(QDialog):
             "invalid response",
             "server endpoint not found",
             "unexpected response",
+            "took too long",   # ConnectTimeout on HTTPS → retry over HTTP
+            "timed out",
+            "stopped responding",
         ))
 
     @staticmethod
