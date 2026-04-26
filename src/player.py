@@ -108,6 +108,9 @@ class MpvPlayerOverlay(QWidget):
         self._top_slide_offset = 12
         self._bottom_slide_offset = 20
         self._controls_anim_ms = 210
+        self._resume_pos = 0.0
+        self._resume_applied = False
+        self._on_position_save = None
         self.setFocusPolicy(Qt.StrongFocus)
 
         self._controls_timer = QTimer(self)
@@ -122,6 +125,15 @@ class MpvPlayerOverlay(QWidget):
         self._loading_anim_timer = QTimer(self)
         self._loading_anim_timer.setInterval(380)
         self._loading_anim_timer.timeout.connect(self._tick_loading_indicator)
+
+        self._save_timer = QTimer(self)
+        self._save_timer.setInterval(5000)
+        self._save_timer.timeout.connect(self._save_position)
+
+        self._toast_timer = QTimer(self)
+        self._toast_timer.setSingleShot(True)
+        self._toast_timer.setInterval(3800)
+        self._toast_timer.timeout.connect(self._hide_resume_toast)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -174,6 +186,22 @@ class MpvPlayerOverlay(QWidget):
         self.loading_subtitle.setAlignment(Qt.AlignCenter)
         loading_layout.addWidget(self.loading_subtitle)
         self.loading_panel.hide()
+
+        self.resume_toast = QFrame(self)
+        self.resume_toast.setObjectName("playerResumeToast")
+        toast_row = QHBoxLayout(self.resume_toast)
+        toast_row.setContentsMargins(14, 10, 14, 10)
+        toast_row.setSpacing(12)
+        self._resume_toast_label = QLabel("", self.resume_toast)
+        self._resume_toast_label.setObjectName("playerResumeToastLabel")
+        toast_row.addWidget(self._resume_toast_label)
+        self._restart_btn = QPushButton("Start over", self.resume_toast)
+        self._restart_btn.setObjectName("chip")
+        self._restart_btn.setFixedHeight(26)
+        self._restart_btn.setCursor(Qt.PointingHandCursor)
+        self._restart_btn.clicked.connect(self._restart_from_beginning)
+        toast_row.addWidget(self._restart_btn)
+        self.resume_toast.hide()
 
         self.bottom_bar = QWidget(self)
         self.bottom_bar.setObjectName("playerControlsBar")
@@ -705,6 +733,8 @@ class MpvPlayerOverlay(QWidget):
         is_live: bool = False,
         playlist: list[dict] | None = None,
         index: int = 0,
+        resume_pos: float = 0.0,
+        on_position_save=None,
     ) -> bool:
         if not MPV_AVAILABLE:
             return False
@@ -714,6 +744,10 @@ class MpvPlayerOverlay(QWidget):
         self._playlist = playlist or []
         self._index = index
         self._reset_ui_state()
+        # Set after reset so reset doesn't wipe them
+        self._resume_pos = resume_pos if not is_live else 0.0
+        self._resume_applied = False
+        self._on_position_save = None if is_live else on_position_save
         self._play_current(url, title, is_live)
         self.setGeometry(self.parent().rect())
         self.show()
@@ -722,9 +756,12 @@ class MpvPlayerOverlay(QWidget):
         self._show_controls()
         self._arm_controls_hide()
         self._position_timer.start()
+        if self._on_position_save is not None:
+            self._save_timer.start()
         return True
 
     def _play_current(self, url: str, title: str, is_live: bool):
+        self._resume_applied = False
         self._is_live = is_live
         self._duration = 0.0
         self._seeking = False
@@ -775,6 +812,9 @@ class MpvPlayerOverlay(QWidget):
     def _play_at(self, idx: int):
         if not (0 <= idx < len(self._playlist)):
             return
+        self._save_position()
+        self._on_position_save = None  # no callback for subsequent playlist items
+        self._resume_pos = 0.0
         item = self._playlist[idx]
         self._index = idx
         self._play_current(item["url"], item.get("title", ""), item.get("is_live", False))
@@ -839,6 +879,14 @@ class MpvPlayerOverlay(QWidget):
             self._duration = duration
             self.duration_label.setText(self._format_time(duration))
             self._set_seek_enabled(True)
+            if self._resume_pos > 0 and not self._resume_applied:
+                self._resume_applied = True
+                if self._resume_pos < self._duration - 10:
+                    try:
+                        self._mpv.command("seek", f"{self._resume_pos:.3f}", "absolute+exact")
+                    except Exception:
+                        pass
+                    self._show_resume_toast(self._resume_pos)
         elif not self._is_live:
             self.duration_label.setText("--:--")
             self._set_seek_enabled(False)
@@ -937,9 +985,51 @@ class MpvPlayerOverlay(QWidget):
                 muted = self.volume_slider.value() == 0
         self._set_button_icon(self.mute_btn, "mute" if muted else "volume", "MUTE" if muted else "VOL")
 
+    def _save_position(self):
+        if self._on_position_save is None or self._is_live or self._mpv is None:
+            return
+        pos = self._get_mpv_number("time-pos")
+        dur = self._get_mpv_number("duration")
+        if pos > 0 or dur > 0:
+            try:
+                self._on_position_save(pos, dur)
+            except Exception:
+                pass
+
+    def _show_resume_toast(self, pos: float):
+        self._resume_toast_label.setText(f"Resumed from {self._format_time(pos)}")
+        self.resume_toast.adjustSize()
+        self._reposition_resume_toast()
+        self.resume_toast.show()
+        self.resume_toast.raise_()
+        self._toast_timer.start()
+
+    def _hide_resume_toast(self):
+        self.resume_toast.hide()
+
+    def _restart_from_beginning(self):
+        self._hide_resume_toast()
+        if self._mpv is not None:
+            try:
+                self._mpv.command("seek", "0", "absolute+exact")
+            except Exception:
+                pass
+
+    def _reposition_resume_toast(self):
+        self.resume_toast.adjustSize()
+        w = self.resume_toast.width()
+        h = self.resume_toast.height()
+        x = self.width() - w - 20
+        y = self._top_bar_height + 16
+        self.resume_toast.move(max(8, x), max(self._top_bar_height + 4, y))
+
     def stop_and_hide(self):
         self._controls_timer.stop()
         self._position_timer.stop()
+        self._save_timer.stop()
+        self._toast_timer.stop()
+        self._save_position()
+        self._hide_resume_toast()
         self._playlist = []
         self._index = 0
         if self._mpv is not None:
@@ -1010,6 +1100,8 @@ class MpvPlayerOverlay(QWidget):
 
     def closeEvent(self, ev):
         self._position_timer.stop()
+        self._save_timer.stop()
+        self._save_position()
         self._dispose_mpv()
         super().closeEvent(ev)
 
@@ -1020,6 +1112,8 @@ class MpvPlayerOverlay(QWidget):
         if self._controls_fade.state() != QAbstractAnimation.Running:
             self._apply_control_positions(self._controls_visible)
         self._reposition_loading_panel()
+        if self.resume_toast.isVisible():
+            self._reposition_resume_toast()
         if self.seek_preview.isVisible():
             self._show_seek_preview(self.seek_slider.value())
 

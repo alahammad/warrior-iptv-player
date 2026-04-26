@@ -221,9 +221,45 @@ class _BasePage(QWidget):
                 index = next(i for i, s in enumerate(siblings) if self._id_of(s) == self._id_of(item))
             except StopIteration:
                 index = 0
-            self.parent_window.play_in_app(url, title, is_live, playlist, index)
+            resume_pos, on_position_save = self._resume_info(item, is_live)
+            self.parent_window.play_in_app(
+                url, title, is_live, playlist, index,
+                resume_pos=resume_pos, on_position_save=on_position_save,
+            )
         else:
             self.parent_window.play_in_vlc(url)
+
+    def _resume_info(self, item, is_live: bool):
+        if is_live:
+            return 0.0, None
+        item_id = self._id_of(item)
+        entries = history.load(self.xtream.server, self.xtream.username)
+        entry = next(
+            (e for e in entries if str(e.get("id")) == item_id and e.get("kind") == self.kind),
+            None,
+        )
+        resume_pos = 0.0
+        if entry:
+            pos = float(entry.get("position", 0.0))
+            dur = float(entry.get("duration", 0.0))
+            if pos > 30 and (dur <= 0 or pos < dur - 30):
+                resume_pos = pos
+
+        server = self.xtream.server
+        username = self.xtream.username
+        kind = self.kind
+        name = self._name_of(item)
+        cover = self._image_of(item) or ""
+        extra = {
+            "category_id": item.get("category_id"),
+            "container_extension": item.get("container_extension", ""),
+        }
+
+        def on_position_save(pos, dur):
+            history.record(server, username, kind, item_id, name,
+                           cover=cover, extra=extra, position=pos, duration=dur)
+
+        return resume_pos, on_position_save
 
     def _on_download(self, item):
         if self.kind != "vod":
@@ -857,7 +893,28 @@ class ContinueWatchingPage(QWidget):
         url = self.xtream.stream_url(kind, entry.get("id"), ext)
         is_live = kind == "live"
         if backend == "app":
-            self.parent_window.play_in_app(url, entry.get("name", ""), is_live, None, 0)
+            resume_pos = 0.0
+            on_position_save = None
+            if not is_live:
+                pos = float(entry.get("position", 0.0))
+                dur = float(entry.get("duration", 0.0))
+                if pos > 30 and (dur <= 0 or pos < dur - 30):
+                    resume_pos = pos
+                item_id = str(entry.get("id", ""))
+                server = self.xtream.server
+                username = self.xtream.username
+                name = entry.get("name", "")
+                cover = entry.get("cover", "") or ""
+                extra = {"container_extension": entry.get("container_extension", "")}
+
+                def on_position_save(p, d):
+                    history.record(server, username, kind, item_id, name,
+                                   cover=cover, extra=extra, position=p, duration=d)
+
+            self.parent_window.play_in_app(
+                url, entry.get("name", ""), is_live, None, 0,
+                resume_pos=resume_pos, on_position_save=on_position_save,
+            )
         else:
             self.parent_window.play_in_vlc(url)
 
@@ -1109,6 +1166,30 @@ class SeriesDetailPage(QWidget):
                 index = next(i for i, ep in enumerate(eps) if str(ep.get("id")) == sid)
             except StopIteration:
                 index = 0
-            self.parent_window.play_in_app(url, title, False, playlist, index)
+
+            entries = history.load(self.xtream.server, self.xtream.username)
+            ep_entry = next((e for e in entries if str(e.get("id")) == sid and e.get("kind") == "series"), None)
+            resume_pos = 0.0
+            if ep_entry:
+                pos = float(ep_entry.get("position", 0.0))
+                dur = float(ep_entry.get("duration", 0.0))
+                if pos > 30 and (dur <= 0 or pos < dur - 30):
+                    resume_pos = pos
+
+            server = self.xtream.server
+            username = self.xtream.username
+            show = self.show_data or {}
+            ep_title = title
+
+            def on_position_save(p, d):
+                history.record(server, username, "series", sid, ep_title,
+                               cover=show.get("cover", "") or "",
+                               extra={"category_id": show.get("category_id")},
+                               position=p, duration=d)
+
+            self.parent_window.play_in_app(
+                url, title, False, playlist, index,
+                resume_pos=resume_pos, on_position_save=on_position_save,
+            )
         else:
             self.parent_window.play_in_vlc(url)
