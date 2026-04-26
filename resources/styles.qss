@@ -1,5 +1,5 @@
 * {
-  font-family: "Segoe UI Variable Text", "Bahnschrift", "Segoe UI", sans-serif;
+  font-family: ".AppleSystemUIFont", "Segoe UI Variable Text", "Bahnschrift", "Segoe UI", sans-serif;
   color: #ffffff;
 }
 
