@@ -31,8 +31,12 @@ watching, VLC hand-off, and movie downloads.
   VLC is auto-detected on Windows (registry + default paths) and macOS
   (`/Applications/VLC.app`).
 - **Download movies** — click the **DL** button on any movie card to save it
-  locally. A save-file dialog lets you choose the destination; progress is
-  shown live in the status bar.
+
+  locally. A live download queue panel (Downloads tab) shows progress, lets
+  you cancel in-flight downloads, and reveals completed files in Finder/Explorer.
+- **Resume playback** — position is saved every 5 seconds. Re-opening a movie
+  or episode picks up from where you left off, with an in-player toast and a
+  "Start over" button.
 - Continue Watching across Live / Movies / Series.
 - Lazy, cached poster loading.
 
@@ -167,6 +171,87 @@ pytest tests/ -v
 The suite covers cross-platform VLC detection, download task logic, and
 profile-key utilities. Tests that require PySide6 (Qt signal integration)
 are automatically skipped when PySide6 is not installed.
+src/                   application code
+  downloader.py        background download manager
+  downloads_page.py    download queue panel widget
+resources/             icons, stylesheet, mpv-2.dll / libmpv.dylib (gitignored)
+scripts/               developer helpers (fetch_mpv.py, create_icns.sh, ...)
+build/                 build scripts (build.bat, build_mac.sh) + Windows spec
+packaging/             PyInstaller specs — build.spec (Windows folder),
+                         mac.spec (.app bundle), rthook_mac_mpv.py
+tests/                 pytest test suite
+docs/                  design / notes
+LICENSES/              third-party license texts (LGPL, THIRD_PARTY.md)
+.data/                 runtime state — config.json, history (gitignored)
+.cache/                cached API responses and images (gitignored)
+```
+
+## Running the tests
+
+```bash
+pip install pytest
+pytest tests/ -v
+```
+
+The suite covers cross-platform VLC detection, download task logic, and
+profile-key utilities. Tests that require PySide6 (Qt signal integration)
+are automatically skipped when PySide6 is not installed.
+
+## Building a macOS .app bundle
+
+Produces `dist/Warrior IPTV Player.app` — drag it to `/Applications` and
+double-click to launch like any native Mac app.
+
+### Prerequisites
+
+- macOS 11 or later
+- Homebrew (`brew install mpv` installs `libmpv.dylib`)
+- Python 3.10+ (installed by `setup_mac.sh` or Homebrew)
+
+### One-command build
+
+```bash
+bash build/build_mac.sh
+```
+
+The script:
+1. Verifies `libmpv.dylib` is present under the Homebrew prefix.
+2. Creates / activates `.venv` and installs PyInstaller.
+3. Optionally converts `resources/icon.ico` → `resources/icon.icns` using
+   macOS `sips` + `iconutil`.
+4. Runs PyInstaller against `packaging/mac.spec`, which bundles `libmpv.dylib`
+   into the app alongside all resources.
+5. Prints the path to the finished `.app`.
+
+Add `--dmg` to also produce a distributable `dist/WarriorIPTV.dmg`:
+
+```bash
+bash build/build_mac.sh --dmg
+```
+
+### Gatekeeper / "App is damaged" warning
+
+Apps built without an Apple Developer ID certificate are quarantined by macOS.
+To bypass:
+
+```bash
+xattr -cr "dist/Warrior IPTV Player.app"
+open "dist/Warrior IPTV Player.app"
+```
+
+Alternatively, right-click → **Open** in Finder and click **Open** in the
+dialog.
+
+### How libmpv is bundled
+
+`packaging/mac.spec` copies `libmpv.dylib` into `Contents/MacOS/` (the
+PyInstaller `_MEIPASS` directory). The runtime hook
+`packaging/rthook_mac_mpv.py` adds that directory to `DYLD_LIBRARY_PATH`
+before `python-mpv` loads, so `ctypes.util.find_library("mpv")` resolves to
+the bundled copy instead of requiring a Homebrew installation on the end-user's
+machine.
+
+---
 
 ## Building a Windows executable
 

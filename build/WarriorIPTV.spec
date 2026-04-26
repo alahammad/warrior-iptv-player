@@ -22,6 +22,7 @@ a = Analysis(
         ('../resources/assets/sidebar/chevron-left.svg', 'assets/sidebar'),
         ('../resources/assets/sidebar/chevron-right.svg', 'assets/sidebar'),
         ('../resources/assets/sidebar/continue.svg', 'assets/sidebar'),
+        ('../resources/assets/sidebar/downloads.svg', 'assets/sidebar'),
         ('../resources/assets/sidebar/logout.svg', 'assets/sidebar'),
         ('../resources/assets/sidebar/profile.svg', 'assets/sidebar'),
     ],
