@@ -175,57 +175,52 @@ are automatically skipped when PySide6 is not installed.
 
 ## Building a macOS .app bundle
 
-Produces `dist/Warrior IPTV Player.app` — drag it to `/Applications` and
-double-click to launch like any native Mac app.
+Produces a **fully self-contained** `Warrior IPTV Player.app` — Python,
+libmpv, FFmpeg, and every other C library are bundled inside. End users need
+nothing installed; just drag the app to `/Applications`.
 
-### Prerequisites
+### Prerequisites (developer machine only)
 
 - macOS 11 or later
-- Homebrew (`brew install mpv` installs `libmpv.dylib`)
+- Homebrew with `mpv` installed: `brew install mpv`
 - Python 3.10+ (installed by `setup_mac.sh` or Homebrew)
 
-### One-command build
+### Build
 
 ```bash
 bash build/build_mac.sh
 ```
 
-The script:
-1. Verifies `libmpv.dylib` is present under the Homebrew prefix.
-2. Creates / activates `.venv` and installs PyInstaller.
-3. Optionally converts `resources/icon.ico` → `resources/icon.icns` using
-   macOS `sips` + `iconutil`.
-4. Runs PyInstaller against `packaging/mac.spec`, which bundles `libmpv.dylib`
-   into the app alongside all resources.
-5. Prints the path to the finished `.app`.
-
-Add `--dmg` to also produce a distributable `dist/WarriorIPTV.dmg`:
+Add `--dmg` to also produce a distributable installer image:
 
 ```bash
-bash build/build_mac.sh --dmg
+bash build/build_mac.sh --dmg   # → dist/WarriorIPTV.dmg
 ```
+
+### What the script does
+
+1. Locates `libmpv.dylib` under the Homebrew prefix.
+2. Creates `.venv`, installs `pyinstaller` and [`delocate`](https://github.com/matthew-brett/delocate).
+3. Optionally converts `resources/icon.ico` → `resources/icon.icns` using
+   macOS `sips` + `iconutil`.
+4. Runs **PyInstaller** (`packaging/mac.spec`) — bundles Python + all Python
+   packages + `libmpv.dylib` into `Warrior IPTV Player.app`.
+5. Runs **`delocate-path`** on `Contents/MacOS/` — walks every dylib's
+   dependency tree, copies missing libraries (FFmpeg, libass, …) into the
+   bundle, and rewrites all `@rpath`/`@loader_path` references so nothing
+   external is needed at runtime.
+6. Optionally wraps the `.app` in a compressed DMG via `hdiutil`.
 
 ### Gatekeeper / "App is damaged" warning
 
-Apps built without an Apple Developer ID certificate are quarantined by macOS.
-To bypass:
+Apps without an Apple Developer ID are quarantined. To bypass on first launch:
 
 ```bash
 xattr -cr "dist/Warrior IPTV Player.app"
 open "dist/Warrior IPTV Player.app"
 ```
 
-Alternatively, right-click → **Open** in Finder and click **Open** in the
-dialog.
-
-### How libmpv is bundled
-
-`packaging/mac.spec` copies `libmpv.dylib` into `Contents/MacOS/` (the
-PyInstaller `_MEIPASS` directory). The runtime hook
-`packaging/rthook_mac_mpv.py` adds that directory to `DYLD_LIBRARY_PATH`
-before `python-mpv` loads, so `ctypes.util.find_library("mpv")` resolves to
-the bundled copy instead of requiring a Homebrew installation on the end-user's
-machine.
+Or right-click → **Open** in Finder.
 
 ---
 
