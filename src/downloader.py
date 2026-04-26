@@ -8,6 +8,16 @@ from PySide6.QtCore import QObject, Qt, Signal
 
 _log = logging.getLogger(__name__)
 
+# Mimic a real video player so IPTV servers don't block the request.
+# Many Xtream servers check User-Agent and return 403/520 for plain HTTP clients.
+_DOWNLOAD_HEADERS = {
+    "User-Agent": "VLC/3.0.20 LibVLC/3.0.20",
+    "Accept": "*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Connection": "keep-alive",
+    "Icy-MetaData": "1",
+}
+
 
 def _friendly_error(exc: Exception) -> str:
     """Convert a requests exception into a short, human-readable message."""
@@ -63,7 +73,7 @@ class _DownloadTask:
         tmp_path = self.dest_path + ".part"
         failed = False
         try:
-            r = requests.get(self.url, stream=True, timeout=(15, 60))
+            r = requests.get(self.url, stream=True, timeout=(15, 60), headers=_DOWNLOAD_HEADERS)
             r.raise_for_status()
             total = int(r.headers.get("content-length", 0))
             downloaded = 0
