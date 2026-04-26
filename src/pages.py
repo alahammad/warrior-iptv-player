@@ -1130,6 +1130,17 @@ class SeriesDetailPage(QWidget):
             )
             row_h.addWidget(vlc_btn)
 
+            dl_btn = QPushButton("DL", row_w)
+            dl_btn.setObjectName("cardActionSecondary")
+            dl_btn.setFixedHeight(28)
+            dl_btn.setFixedWidth(42)
+            dl_btn.setCursor(Qt.PointingHandCursor)
+            dl_btn.setToolTip("Download episode")
+            dl_btn.clicked.connect(
+                lambda _=False, sid=ep_id, e=ext, t=title: self._download_episode(sid, e, t)
+            )
+            row_h.addWidget(dl_btn)
+
             self.episodes_layout.addWidget(row_w)
         self.episodes_layout.addStretch()
 
@@ -1193,3 +1204,10 @@ class SeriesDetailPage(QWidget):
             )
         else:
             self.parent_window.play_in_vlc(url)
+
+    def _download_episode(self, sid: str, ext: str, title: str):
+        show = self.show_data or {}
+        show_name = show.get("name", "")
+        full_title = f"{show_name} - {title}" if show_name else title
+        url = self.xtream.stream_url("series", sid, ext)
+        self.parent_window.download_movie(url, full_title, ext)

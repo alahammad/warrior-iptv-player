@@ -3,7 +3,7 @@
 #
 # Usage:
 #   chmod +x setup_mac.sh
-#   ./setup_mac.sh          # set up and launch
+#   ./setup_mac.sh          # full setup + launch
 #   ./setup_mac.sh --run    # skip setup, just launch (after first run)
 set -euo pipefail
 
@@ -17,13 +17,65 @@ yellow() { printf '\033[0;33m%s\033[0m\n' "$*"; }
 red()    { printf '\033[0;31m%s\033[0m\n' "$*"; }
 step()   { printf '\n\033[1;34m▶  %s\033[0m\n' "$*"; }
 
+# ── shared launch function (used by both --run and full setup) ───────────────
+_launch() {
+    # Locate libmpv.dylib
+    BREW_PREFIX="$(brew --prefix 2>/dev/null || echo /opt/homebrew)"
+    LIBMPV=""
+    for candidate in "$BREW_PREFIX/lib" /opt/homebrew/lib /usr/local/lib; do
+        if [[ -f "$candidate/libmpv.dylib" ]]; then
+            LIBMPV="$candidate/libmpv.dylib"
+            export DYLD_LIBRARY_PATH="$candidate${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+            break
+        fi
+    done
+    if [[ -z "$LIBMPV" ]]; then
+        red "libmpv.dylib not found. Run: brew install mpv"
+        exit 1
+    fi
+
+    # Architecture sanity check — Python and libmpv must match (arm64 or x86_64).
+    PYTHON_ARCH="$("$PYTHON" -c 'import platform; print(platform.machine())')"
+    LIBMPV_ARCH="$(file "$LIBMPV" | grep -oE 'arm64|x86_64' | head -1)"
+    if [[ -n "$LIBMPV_ARCH" && "$PYTHON_ARCH" != "$LIBMPV_ARCH" ]]; then
+        red "Architecture mismatch:"
+        red "  Python  : $PYTHON_ARCH ($PYTHON)"
+        red "  libmpv  : $LIBMPV_ARCH ($LIBMPV)"
+        red ""
+        red "Fix: install a native Python that matches your libmpv."
+        if [[ "$LIBMPV_ARCH" == "arm64" ]]; then
+            red "  brew install python@3.12   (installs native arm64 Python)"
+        else
+            red "  Use the Intel Homebrew prefix or a Rosetta terminal."
+        fi
+        exit 1
+    fi
+    green "Architecture: $PYTHON_ARCH  ✓"
+
+    # mpv requires LC_NUMERIC=C (dot decimal separator).
+    # QApplication resets the locale, so we also enforce it at shell level.
+    export LC_NUMERIC=C
+
+    # Quick subprocess smoke-test — catches bus errors / import failures before
+    # they take down the whole app with no useful message.
+    if ! LC_NUMERIC=C DYLD_LIBRARY_PATH="$DYLD_LIBRARY_PATH" \
+        "$PYTHON" -c "import mpv" 2>/tmp/warrior_mpv_test.log; then
+        red "libmpv failed to load. Details:"
+        cat /tmp/warrior_mpv_test.log >&2
+        red "Try: brew reinstall mpv"
+        exit 1
+    fi
+
+    exec "$PYTHON" "$REPO_DIR/src/main.py" "$@"
+}
+
 # ── skip setup if --run was passed ───────────────────────────────────────────
 if [[ "${1:-}" == "--run" ]]; then
     if [[ ! -f "$PYTHON" ]]; then
         red "Virtual environment not found. Run ./setup_mac.sh first."
         exit 1
     fi
-    exec "$PYTHON" "$REPO_DIR/src/main.py" "${@:2}"
+    _launch "${@:2}"
 fi
 
 # ── 1. Check macOS ───────────────────────────────────────────────────────────
@@ -38,7 +90,6 @@ step "Checking Homebrew"
 if ! command -v brew &>/dev/null; then
     yellow "Homebrew not found. Installing..."
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    # Add Homebrew to PATH for Apple Silicon
     if [[ -f /opt/homebrew/bin/brew ]]; then
         eval "$(/opt/homebrew/bin/brew shellenv)"
     fi
@@ -92,49 +143,30 @@ step "Installing Python dependencies"
 "$PYTHON" -m pip install -r "$REPO_DIR/requirements.txt" --quiet
 green "Dependencies installed."
 
-# ── 7. Sanity check — can we import mpv? ─────────────────────────────────────
+# ── 7. Verify mpv Python bindings ────────────────────────────────────────────
 step "Verifying mpv Python bindings"
-if "$PYTHON" -c "import mpv" 2>/dev/null; then
-    green "python-mpv OK."
-else
-    # python-mpv needs to find libmpv.dylib; help it via DYLD_LIBRARY_PATH
-    MPV_LIB_DIR=""
-    for candidate in /opt/homebrew/lib /usr/local/lib; do
-        if [[ -f "$candidate/libmpv.dylib" ]]; then
-            MPV_LIB_DIR="$candidate"
-            break
-        fi
-    done
-    if [[ -n "$MPV_LIB_DIR" ]]; then
-        export DYLD_LIBRARY_PATH="$MPV_LIB_DIR${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
-        if "$PYTHON" -c "import mpv" 2>/dev/null; then
-            green "python-mpv OK (DYLD_LIBRARY_PATH=$MPV_LIB_DIR)."
-            # Persist the hint for future --run invocations via a small wrapper
-            yellow "Note: DYLD_LIBRARY_PATH=$MPV_LIB_DIR will be set automatically on launch."
-        else
-            red "python-mpv import failed even with DYLD_LIBRARY_PATH set."
-            red "Try: brew reinstall mpv"
-            exit 1
-        fi
-    else
-        red "libmpv.dylib not found. Try: brew install mpv"
-        exit 1
-    fi
-fi
-
-# ── 8. Launch ────────────────────────────────────────────────────────────────
-step "Launching Warrior IPTV Player"
-# Set DYLD_LIBRARY_PATH so libmpv is found at runtime (harmless if not needed)
-for candidate in /opt/homebrew/lib /usr/local/lib; do
-    if [[ -d "$candidate" ]]; then
-        export DYLD_LIBRARY_PATH="$candidate${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+BREW_PREFIX="$(brew --prefix)"
+MPV_LIB_DIR=""
+for candidate in "$BREW_PREFIX/lib" /opt/homebrew/lib /usr/local/lib; do
+    if [[ -f "$candidate/libmpv.dylib" ]]; then
+        MPV_LIB_DIR="$candidate"
         break
     fi
 done
 
-# mpv requires LC_NUMERIC=C (dot as decimal separator) or it segfaults.
-# QApplication resets the locale on startup, so we force it at the shell
-# level as a hard backstop before Python even starts.
-export LC_NUMERIC=C
+if [[ -z "$MPV_LIB_DIR" ]]; then
+    red "libmpv.dylib not found. Try: brew install mpv"
+    exit 1
+fi
 
-exec "$PYTHON" "$REPO_DIR/src/main.py" "$@"
+if DYLD_LIBRARY_PATH="$MPV_LIB_DIR" LC_NUMERIC=C "$PYTHON" -c "import mpv" 2>/dev/null; then
+    green "python-mpv OK."
+else
+    red "python-mpv import failed. Try: brew reinstall mpv"
+    DYLD_LIBRARY_PATH="$MPV_LIB_DIR" LC_NUMERIC=C "$PYTHON" -c "import mpv" || true
+    exit 1
+fi
+
+# ── 8. Launch ────────────────────────────────────────────────────────────────
+step "Launching Warrior IPTV Player"
+_launch "$@"
