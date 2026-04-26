@@ -5,7 +5,7 @@ import os
 import devlog
 devlog.maybe_enable_from_argv(sys.argv)
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer
 from PySide6.QtGui import QFont, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
@@ -41,6 +41,22 @@ from xtream import XtreamClient
 
 SIDEBAR_COLLAPSED_WIDTH = 72
 SIDEBAR_TOGGLE_SIZE = 34
+
+_BADGE_SIZE = 17
+
+
+class _BadgePositioner(QObject):
+    """Event filter that keeps the dl_badge pinned to the top-right of its parent button."""
+    def __init__(self, badge: "QLabel", btn: "QPushButton"):
+        super().__init__(btn)
+        self._badge = badge
+
+    def eventFilter(self, obj, event):
+        if event.type() in (QEvent.Resize, QEvent.Show):
+            self._badge.setFixedSize(_BADGE_SIZE, _BADGE_SIZE)
+            self._badge.move(obj.width() - _BADGE_SIZE - 4, 4)
+            self._badge.raise_()
+        return False
 
 
 def _asset_path(*parts: str) -> str:
@@ -417,7 +433,18 @@ class MainWindow(QMainWindow):
         self._download_manager.download_error.connect(self._on_download_error)
         self._download_manager.download_error.connect(self.downloads_page.on_error)
         self.downloads_page.cancel_download.connect(self._download_manager.cancel)
+        self._download_manager.active_count_changed.connect(self._update_dl_badge)
         self._download_dir = str(APP_DIR / "downloads")
+
+        # Badge overlay on the Downloads nav button — shows count of active + queued downloads.
+        dl_btn = self.nav_buttons[4]
+        self._dl_badge = QLabel(dl_btn)
+        self._dl_badge.setObjectName("dlBadge")
+        self._dl_badge.setAlignment(Qt.AlignCenter)
+        self._dl_badge.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self._dl_badge.hide()
+        self._dl_badge_filter = _BadgePositioner(self._dl_badge, dl_btn)
+        dl_btn.installEventFilter(self._dl_badge_filter)
 
         self._sync_sidebar_visuals()
         self._update_responsive_shell()
@@ -564,8 +591,7 @@ class MainWindow(QMainWindow):
         self._download_dir = os.path.dirname(dest)
         download_id = self._download_manager.start_download(url, dest)
         self.downloads_page.add_download(download_id, title, dest)
-        self._switch(4)
-        self.nav_buttons[4].setChecked(True)
+        self.statusBar().showMessage(f"Download started: '{title}'", 4000)
         self._pending_downloads: dict = getattr(self, "_pending_downloads", {})
         self._pending_downloads[download_id] = {"title": title, "dest": dest}
 
@@ -598,6 +624,17 @@ class MainWindow(QMainWindow):
             "Download Failed",
             f"Could not download '{title}':\n{message}",
         )
+
+    def _update_dl_badge(self, count: int):
+        if count <= 0:
+            self._dl_badge.hide()
+        else:
+            self._dl_badge.setText(str(count) if count < 10 else "9+")
+            self._dl_badge.setFixedSize(_BADGE_SIZE, _BADGE_SIZE)
+            btn = self.nav_buttons[4]
+            self._dl_badge.move(btn.width() - _BADGE_SIZE - 4, 4)
+            self._dl_badge.raise_()
+            self._dl_badge.show()
 
     def _logout(self):
         active = config.get_active(self.config)
