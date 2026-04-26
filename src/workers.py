@@ -153,7 +153,12 @@ class FuncRunner(QRunnable):
                 return
             self.signals.emit_done(result)
         except Exception as e:
-            _log.exception("run_async task failed in %s", getattr(self.fn, "__name__", "<fn>"))
+            # Expected network/IO errors — no traceback spam, just a debug line.
+            # The error message is forwarded to on_error which shows it in the UI.
+            if isinstance(e, (ConnectionError, TimeoutError, OSError)):
+                _log.debug("run_async %s: %s", getattr(self.fn, "__name__", "<fn>"), e)
+            else:
+                _log.exception("run_async task failed in %s", getattr(self.fn, "__name__", "<fn>"))
             self.signals.emit_error(str(e))
 
 
