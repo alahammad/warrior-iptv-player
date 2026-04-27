@@ -149,9 +149,10 @@ QPushButton#navBtn:hover {
   color: #ffffff;
 }
 QPushButton#navBtn:checked {
-  background: #e50914;
+  background: rgba(229, 9, 20, 0.18);
   color: #ffffff;
   font-weight: 700;
+  border: 1px solid rgba(229, 9, 20, 0.35);
 }
 QPushButton#navBtn[collapsed="true"] {
   text-align: center;
@@ -263,26 +264,24 @@ QPushButton#playBtn:hover {
 }
 
 QPushButton#scrollBtn {
-  background: #e50914;
-  color: #ffffff;
-  font-size: 20px;
-  font-weight: 900;
+  background: rgba(12, 12, 16, 0.82);
+  color: #e4e4e7;
+  font-size: 28px;
+  font-weight: 300;
   border: none;
-  border-radius: 12px;
+  border-radius: 10px;
 }
 QPushButton#scrollBtn:hover {
-  background: #ff2a35;
-  border: none;
+  background: rgba(229, 9, 20, 0.90);
+  color: #ffffff;
 }
-
 QPushButton#scrollBtn:pressed {
-  background: #c80812;
-  border: none;
+  background: rgba(160, 6, 13, 0.95);
+  color: #ffffff;
 }
-
 QPushButton#scrollBtn:disabled {
-  background: rgba(20, 20, 24, 0.46);
-  color: #5b5c63;
+  background: rgba(12, 12, 16, 0.30);
+  color: rgba(255, 255, 255, 0.10);
 }
 
 QPushButton#chip {
@@ -298,17 +297,20 @@ QPushButton#chip:checked { background: #e50914; color: white; }
 
 QPushButton#rowActionBtn {
   background: transparent;
-  color: #f4f4f5;
+  color: #a1a1aa;
   border: 1px solid #31323a;
   border-radius: 16px;
-  padding: 7px 16px;
+  padding: 6px 16px;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
 }
-
 QPushButton#rowActionBtn:hover {
   background: #18191f;
-  border: 1px solid #4b5563;
+  color: #ffffff;
+  border: 1px solid #52525b;
+}
+QPushButton#rowActionBtn:pressed {
+  background: #111216;
 }
 
 QLineEdit {
@@ -769,20 +771,30 @@ QPushButton#cardActionPrimary {
   font-size: 11px;
   font-weight: 700;
   padding: 0 10px;
+  letter-spacing: 0.2px;
 }
 QPushButton#cardActionPrimary:hover {
   background: #f6121d;
 }
+QPushButton#cardActionPrimary:pressed {
+  background: #b00710;
+}
 QPushButton#cardActionSecondary {
-  background: transparent;
-  color: #e5e5e5;
-  border: 1px solid #52525b;
+  background: rgba(255,255,255,0.04);
+  color: #d4d4d8;
+  border: 1px solid #3f3f46;
   border-radius: 8px;
   font-size: 11px;
+  font-weight: 600;
   padding: 0 10px;
 }
 QPushButton#cardActionSecondary:hover {
   background: #27272a;
+  color: #ffffff;
+  border: 1px solid #52525b;
+}
+QPushButton#cardActionSecondary:pressed {
+  background: #1e1e22;
 }
 
 QWidget#emptyState {

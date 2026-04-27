@@ -269,23 +269,23 @@ class PosterCard(QFrame):
         actions.setContentsMargins(10, 0, 10, 8)
         actions.setSpacing(6)
 
-        self.app_btn = QPushButton("In App", self.actions_widget)
+        self.app_btn = QPushButton("▶  Play", self.actions_widget)
         self.app_btn.setObjectName("cardActionPrimary")
         self.app_btn.setCursor(Qt.PointingHandCursor)
-        self.app_btn.setFixedHeight(24)
+        self.app_btn.setFixedHeight(26)
         self.app_btn.clicked.connect(self._handle_play_app)
 
-        self.vlc_btn = QPushButton("In VLC", self.actions_widget)
+        self.vlc_btn = QPushButton("VLC", self.actions_widget)
         self.vlc_btn.setObjectName("cardActionSecondary")
         self.vlc_btn.setCursor(Qt.PointingHandCursor)
-        self.vlc_btn.setFixedHeight(24)
+        self.vlc_btn.setFixedHeight(26)
         self.vlc_btn.clicked.connect(self._handle_play_vlc)
 
-        self.download_btn = QPushButton("DL", self.actions_widget)
+        self.download_btn = QPushButton("↓", self.actions_widget)
         self.download_btn.setObjectName("cardActionSecondary")
         self.download_btn.setCursor(Qt.PointingHandCursor)
-        self.download_btn.setFixedHeight(24)
-        self.download_btn.setFixedWidth(30)
+        self.download_btn.setFixedHeight(26)
+        self.download_btn.setFixedWidth(34)
         self.download_btn.setToolTip("Download")
         self.download_btn.clicked.connect(self._handle_download)
         self.download_btn.setVisible(False)
@@ -620,15 +620,50 @@ class VirtualPosterGrid(QWidget):
         self.setUpdatesEnabled(True)
 
 
+class _RowCarousel(QWidget):
+    """Container that fills with the scroll area and overlays ‹ › nav buttons."""
+    def __init__(
+        self,
+        scroll: "QScrollArea",
+        left_btn: "QPushButton",
+        right_btn: "QPushButton",
+        height: int,
+        parent=None,
+    ):
+        super().__init__(parent)
+        self._scroll = scroll
+        self._left = left_btn
+        self._right = right_btn
+        scroll.setParent(self)
+        left_btn.setParent(self)
+        right_btn.setParent(self)
+        self.setFixedHeight(height)
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev)
+        w, h = self.width(), self.height()
+        self._scroll.setGeometry(0, 0, w, h)
+        bh = self._left.height()
+        mid_y = (h - bh) // 2
+        self._left.move(0, mid_y)
+        self._right.move(w - self._right.width(), mid_y)
+        self._left.raise_()
+        self._right.raise_()
+
+
 class Row(QWidget):
     expand_clicked = Signal()
+
+    _BTN_W = 46
+    _BTN_H = 88
+    _SCROLL_STEP = 500
 
     def __init__(self, title: str, count: int = 0, expandable: bool = True, card_height: int = 220, parent: QWidget | None = None):
         super().__init__(parent)
         self._card_height = card_height
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        layout.setSpacing(8)
 
         header_row = QHBoxLayout()
         header_row.setContentsMargins(0, 0, 0, 0)
@@ -650,51 +685,49 @@ class Row(QWidget):
         header_row.addWidget(title_wrap)
         header_row.addStretch()
         if expandable:
-            self.expand_btn = QPushButton("View all", self)
+            self.expand_btn = QPushButton("View all →", self)
             self.expand_btn.setObjectName("rowActionBtn")
             self.expand_btn.setCursor(Qt.PointingHandCursor)
             self.expand_btn.clicked.connect(self.expand_clicked.emit)
             header_row.addWidget(self.expand_btn)
         layout.addLayout(header_row)
 
-        self.scroll = QScrollArea(self)
+        # Scroll area — no scrollbar; navigation via overlay buttons + trackpad/wheel
+        self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
-        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.scroll.setFixedHeight(self._card_height + 18)
-        self.scroll.horizontalScrollBar().setSingleStep(120)
-        self.scroll.horizontalScrollBar().setPageStep(420)
+        self.scroll.horizontalScrollBar().setSingleStep(80)
+        self.scroll.horizontalScrollBar().setPageStep(self._SCROLL_STEP)
 
         container = QWidget(self.scroll)
         self.hbox = QHBoxLayout(container)
-        self.hbox.setContentsMargins(4, 4, 4, 8)
-        self.hbox.setSpacing(8)
+        self.hbox.setContentsMargins(self._BTN_W + 4, 4, self._BTN_W + 4, 4)
+        self.hbox.setSpacing(10)
         self.hbox.addStretch()
         self.scroll.setWidget(container)
 
-        wrapper = QWidget(self)
-        wrap_layout = QHBoxLayout(wrapper)
-        wrap_layout.setContentsMargins(0, 0, 0, 0)
-        wrap_layout.setSpacing(8)
-
-        self.left_btn = QPushButton("<", wrapper)
+        # Overlay nav buttons
+        self.left_btn = QPushButton("‹")
         self.left_btn.setObjectName("scrollBtn")
-        self.left_btn.setFixedWidth(42)
-        self.left_btn.setFixedHeight(80)
-        self.left_btn.clicked.connect(lambda: self._scroll(-420))
-        self.right_btn = QPushButton(">", wrapper)
-        self.right_btn.setObjectName("scrollBtn")
-        self.right_btn.setFixedWidth(42)
-        self.right_btn.setFixedHeight(80)
-        self.right_btn.clicked.connect(lambda: self._scroll(420))
+        self.left_btn.setFixedSize(self._BTN_W, self._BTN_H)
+        self.left_btn.setCursor(Qt.PointingHandCursor)
+        self.left_btn.clicked.connect(lambda: self._scroll(-self._SCROLL_STEP))
 
-        wrap_layout.addWidget(self.left_btn)
-        wrap_layout.addWidget(self.scroll, 1)
-        wrap_layout.addWidget(self.right_btn)
-        layout.addWidget(wrapper)
+        self.right_btn = QPushButton("›")
+        self.right_btn.setObjectName("scrollBtn")
+        self.right_btn.setFixedSize(self._BTN_W, self._BTN_H)
+        self.right_btn.setCursor(Qt.PointingHandCursor)
+        self.right_btn.clicked.connect(lambda: self._scroll(self._SCROLL_STEP))
+
+        carousel = _RowCarousel(
+            self.scroll, self.left_btn, self.right_btn,
+            self._card_height + 8, self,
+        )
+        layout.addWidget(carousel)
 
         self._scroll_anim = QPropertyAnimation(self.scroll.horizontalScrollBar(), b"value", self)
-        self._scroll_anim.setDuration(180)
+        self._scroll_anim.setDuration(220)
         self._scroll_anim.setEasingCurve(QEasingCurve.OutCubic)
         self.scroll.horizontalScrollBar().valueChanged.connect(self._update_scroll_buttons)
         self.scroll.horizontalScrollBar().rangeChanged.connect(lambda *_: self._update_scroll_buttons())
@@ -704,9 +737,10 @@ class Row(QWidget):
 
     def eventFilter(self, obj, ev):
         if obj is self.scroll.viewport() and ev.type() == QEvent.Wheel:
-            delta = ev.angleDelta().x()
-            if delta == 0 and ev.modifiers() & Qt.ShiftModifier:
-                delta = ev.angleDelta().y()
+            dx = ev.angleDelta().x()
+            dy = ev.angleDelta().y()
+            # Horizontal trackpad swipe takes priority; mouse wheel (dy) also scrolls horizontally
+            delta = dx if abs(dx) >= abs(dy) else dy
             if delta != 0:
                 self._scroll(-delta)
                 ev.accept()
@@ -725,10 +759,8 @@ class Row(QWidget):
 
     def _update_scroll_buttons(self):
         bar = self.scroll.horizontalScrollBar()
-        at_start = bar.value() <= bar.minimum()
-        at_end = bar.value() >= bar.maximum()
-        self.left_btn.setEnabled(not at_start)
-        self.right_btn.setEnabled(not at_end)
+        self.left_btn.setEnabled(bar.value() > bar.minimum())
+        self.right_btn.setEnabled(bar.value() < bar.maximum())
 
     def add_card(self, card: PosterCard):
         self.hbox.insertWidget(self.hbox.count() - 1, card)
