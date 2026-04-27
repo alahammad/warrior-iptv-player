@@ -3,8 +3,17 @@ import sys
 from pathlib import Path
 
 if getattr(sys, "frozen", False):
-    APP_DIR = Path(sys.executable).parent
-    RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR))
+    # When packaged as a .app, sys.executable is inside Contents/MacOS/ which is
+    # read-only (inside /Applications/). Use the macOS-conventional writable
+    # location for caches, data, and downloads.
+    APP_DIR = Path.home() / "Library" / "Application Support" / "WarriorIPTV"
+    APP_DIR.mkdir(parents=True, exist_ok=True)
+    _meipass = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+    # PyInstaller bundles datas into _MEIPASS/resources/ (as declared in the
+    # spec file). Probe that subdirectory first; fall back to _MEIPASS itself
+    # so the code works with both one-dir and one-file PyInstaller layouts.
+    _resources_sub = _meipass / "resources"
+    RESOURCE_DIR = _resources_sub if _resources_sub.is_dir() else _meipass
 else:
     APP_DIR = Path(__file__).resolve().parent.parent
     RESOURCE_DIR = APP_DIR / "resources"

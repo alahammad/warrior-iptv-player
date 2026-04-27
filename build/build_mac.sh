@@ -94,6 +94,56 @@ fi
 
 echo "App : $APP"
 
+# ── Fix code signature (prevent "Code Signature Invalid" crash) ───────────────
+# delocate can inadvertently bundle a stray Python.framework version (e.g. 3.14
+# from Xcode command-line tools) alongside the intended one, which breaks the
+# framework's sealed resource list and causes macOS to SIGKILL the app at launch.
+# We strip unexpected versions and re-sign everything from the inside out.
+echo "Re-signing bundle to prevent code-signature crash..."
+
+FRAMEWORK_BASE="$APP/Contents/Frameworks/Python.framework/Versions"
+EXPECTED_PYVER="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+
+if [[ -d "$FRAMEWORK_BASE" ]]; then
+  for ver_dir in "$FRAMEWORK_BASE"/*/; do
+    ver="$(basename "$ver_dir")"
+    if [[ "$ver" != "$EXPECTED_PYVER" && "$ver" != "Current" ]]; then
+      echo "  Removing unexpected Python framework version: $ver"
+      rm -rf "$ver_dir"
+    fi
+  done
+fi
+
+# Sign all .dylib and .so files in the bundle (inside-out)
+find "$APP" -type f \( -name "*.dylib" -o -name "*.so" \) 2>/dev/null | while read -r f; do
+  codesign --force --sign - "$f" 2>/dev/null || true
+done
+
+# Sign the Python binary inside the framework
+PY_BIN="$APP/Contents/Frameworks/Python.framework/Versions/$EXPECTED_PYVER/Python"
+if [[ -f "$PY_BIN" ]]; then
+  codesign --force --sign - "$PY_BIN" 2>/dev/null || true
+fi
+
+# Sign the framework itself
+PY_FRAMEWORK="$APP/Contents/Frameworks/Python.framework"
+if [[ -d "$PY_FRAMEWORK" ]]; then
+  codesign --force --sign - "$PY_FRAMEWORK" 2>/dev/null || true
+fi
+
+# Sign the main executable
+codesign --force --sign - "$APP/Contents/MacOS/WarriorIPTV" 2>/dev/null || true
+
+# Sign the bundle (without --deep so child signatures are preserved)
+codesign --force --sign - "$APP" 2>/dev/null || true
+
+# Verify
+if codesign --verify "$APP" 2>/dev/null; then
+  echo "  ✅ Code signature valid"
+else
+  echo "  ⚠️  Code signature verify failed — app may still run, but check signing"
+fi
+
 # ── DMG (optional) ────────────────────────────────────────────────────────────
 if [[ "$BUILD_DMG" == true ]]; then
   DMG="$DIST/WarriorIPTV.dmg"

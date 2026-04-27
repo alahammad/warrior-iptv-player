@@ -198,8 +198,20 @@ class _ImageRunner(QRunnable):
         if _shutting_down:
             return
         try:
-            r = requests.get(self.url, timeout=(2, 5))
-            r.raise_for_status()
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+            try:
+                r = requests.get(self.url, timeout=(1.5, 3), headers=headers)
+                r.raise_for_status()
+            except requests.RequestException as e:
+                # Many IPTV servers provide https:// URLs but only support HTTP,
+                # causing timeouts and clogged thread pools. Try HTTP fallback.
+                if self.url.startswith("https://"):
+                    fallback_url = "http://" + self.url[8:]
+                    r = requests.get(fallback_url, timeout=(1.5, 3), headers=headers)
+                    r.raise_for_status()
+                else:
+                    raise e
+            
             if _shutting_down:
                 return
 
