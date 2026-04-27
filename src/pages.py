@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+import favorites
 import history
 import search
 from widgets import EpisodeListSkeleton, Hero, HeroSkeleton, PosterCard, Row, RowSkeleton, VirtualPosterGrid
@@ -52,6 +53,7 @@ class _BasePage(QWidget):
         self._series_synopsis_cache: dict[str, str] = {}
         self._series_synopsis_pending: set[str] = set()
         self._series_synopsis_waiters: dict[str, list] = {}
+        self._fav_cache: dict = {}
         self._resize_timer = QTimer(self)
         self._resize_timer.setSingleShot(True)
         self._resize_timer.timeout.connect(self._apply_responsive_layout)
@@ -268,6 +270,29 @@ class _BasePage(QWidget):
         title = self._name_of(item)
         ext = self._ext_of(item)
         self.parent_window.download_movie(url, title, ext)
+
+    def _on_favorite(self, item):
+        favorites.toggle(
+            self.xtream.server, self.xtream.username, self.kind,
+            self._id_of(item), self._name_of(item), self._image_of(item) or "",
+        )
+        self._render()
+
+    def _is_fav(self, item) -> bool:
+        bucket = self._fav_cache.get(self.kind, {})
+        return bool(bucket.get(str(self._id_of(item))))
+
+    def _render_favorites_row(self):
+        fav_items = favorites.get_favorites(
+            self.xtream.server, self.xtream.username, self.kind, self.items, self._id_of
+        )
+        if not fav_items:
+            return
+        row = Row("★ Favorites", len(fav_items), expandable=False, card_height=self.row_card_height)
+        for item in fav_items:
+            card = self._build_card(item, parent=row)
+            row.add_card(card)
+        self.content_layout.addWidget(row)
 
     def _clear_layout(self):
         self._lazy_queue = []
@@ -540,6 +565,8 @@ class _BasePage(QWidget):
                 synopsis=self._synopsis_of(item),
                 synopsis_loader=lambda cb, it=item: self._request_series_synopsis(it, cb),
                 on_click=lambda it=item: self._on_play(it),
+                on_favorite=lambda it=item: self._on_favorite(it),
+                is_favorite=self._is_fav(item),
             )
         else:
             card.configure(
@@ -554,6 +581,8 @@ class _BasePage(QWidget):
                 on_play_app=lambda it=item: self._on_play(it, "app"),
                 on_play_vlc=lambda it=item: self._on_play(it, "vlc"),
                 on_download=(lambda it=item: self._on_download(it)) if self.kind == "vod" else None,
+                on_favorite=lambda it=item: self._on_favorite(it),
+                is_favorite=self._is_fav(item),
             )
         return card
 
@@ -568,6 +597,8 @@ class _BasePage(QWidget):
                 synopsis=self._synopsis_of(item),
                 synopsis_loader=lambda cb, it=item: self._request_series_synopsis(it, cb),
                 on_click=lambda it=item: self._on_play(it),
+                on_favorite=lambda it=item: self._on_favorite(it),
+                is_favorite=self._is_fav(item),
             )
             return
         card.configure(
@@ -582,6 +613,8 @@ class _BasePage(QWidget):
             on_play_app=lambda it=item: self._on_play(it, "app"),
             on_play_vlc=lambda it=item: self._on_play(it, "vlc"),
             on_download=(lambda it=item: self._on_download(it)) if self.kind == "vod" else None,
+            on_favorite=lambda it=item: self._on_favorite(it),
+            is_favorite=self._is_fav(item),
         )
 
     def _render_grid(self, items_to_render: list):
@@ -611,6 +644,7 @@ class _BasePage(QWidget):
 
     def _render(self):
         self._render_token = getattr(self, "_render_token", 0) + 1
+        self._fav_cache = favorites.load(self.xtream.server, self.xtream.username)
         self._clear_layout()
 
         if not self.items:
@@ -659,6 +693,8 @@ class _BasePage(QWidget):
                 self.content_layout.addStretch()
                 self._stretch_added = True
             return
+
+        self._render_favorites_row()
 
         with_image = [item for item in self.items if self._image_of(item)]
         if with_image:

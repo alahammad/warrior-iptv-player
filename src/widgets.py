@@ -162,6 +162,9 @@ class PosterCard(QFrame):
         self._play_app_handler = None
         self._play_vlc_handler = None
         self._download_handler = None
+        self._fav_handler = None
+        self._fav_enabled = False
+        self._is_favorite = False
         self._synopsis_loader = None
         self._synopsis_requested = False
         self._synopsis_loading = False
@@ -231,6 +234,17 @@ class PosterCard(QFrame):
         self.synopsis_scroll.setWidget(synopsis_body)
         synopsis_layout.addWidget(self.synopsis_scroll, 1)
         art_layout.addWidget(self.synopsis_overlay, 0, 0)
+
+        _fav_size = 28
+        self.fav_btn = QPushButton("☆", self.image_wrap)
+        self.fav_btn.setObjectName("favBtn")
+        self.fav_btn.setFixedSize(_fav_size, _fav_size)
+        self.fav_btn.setCursor(Qt.PointingHandCursor)
+        self.fav_btn.setToolTip("Add to Favorites")
+        self.fav_btn.clicked.connect(self._handle_favorite)
+        self.fav_btn.move(self._img_w - _fav_size - 6, 6)
+        self.fav_btn.hide()
+
         for obj in (
             self.image_wrap,
             self.image_label,
@@ -239,6 +253,7 @@ class PosterCard(QFrame):
             self.synopsis_scroll.viewport(),
             self.synopsis_label,
             self.synopsis_title,
+            self.fav_btn,
         ):
             obj.installEventFilter(self)
         layout.addWidget(self.image_wrap)
@@ -311,13 +326,20 @@ class PosterCard(QFrame):
         on_play_app=None,
         on_play_vlc=None,
         on_download=None,
+        on_favorite=None,
+        is_favorite: bool = False,
     ):
         self._click_handler = on_click
         self._play_app_handler = on_play_app
         self._play_vlc_handler = on_play_vlc
         self._download_handler = on_download
+        self._fav_handler = on_favorite
+        self._fav_enabled = on_favorite is not None
         self._synopsis_loader = synopsis_loader
         self.download_btn.setVisible(on_download is not None and self._show_actions)
+        if self._fav_enabled:
+            self.set_favorite(is_favorite)
+        self.fav_btn.hide()
         self._synopsis_requested = False
         self._synopsis_loading = False
         if fallback is not None:
@@ -381,6 +403,18 @@ class PosterCard(QFrame):
         self.download.emit()
         if self._download_handler:
             self._download_handler()
+
+    def _handle_favorite(self):
+        if self._fav_handler:
+            self._fav_handler()
+
+    def set_favorite(self, state: bool):
+        self._is_favorite = state
+        self.fav_btn.setText("★" if state else "☆")
+        self.fav_btn.setToolTip("Remove from Favorites" if state else "Add to Favorites")
+        self.fav_btn.setProperty("active", state)
+        self.fav_btn.style().unpolish(self.fav_btn)
+        self.fav_btn.style().polish(self.fav_btn)
 
     def mousePressEvent(self, ev):
         if ev.button() == Qt.LeftButton:
@@ -454,6 +488,10 @@ class PosterCard(QFrame):
         self._set_synopsis_visible(self.underMouse() or self.image_wrap.underMouse() or self.synopsis_overlay.underMouse())
 
     def eventFilter(self, obj, ev):
+        if obj is self.fav_btn:
+            if ev.type() == QEvent.Leave:
+                QTimer.singleShot(0, self._update_fav_btn_visibility)
+            return super().eventFilter(obj, ev)
         if obj in (
             self.image_wrap,
             self.image_label,
@@ -465,6 +503,9 @@ class PosterCard(QFrame):
         ):
             if ev.type() in (QEvent.Enter, QEvent.HoverEnter):
                 self._schedule_synopsis_show()
+                if self._fav_enabled:
+                    self.fav_btn.raise_()
+                    self.fav_btn.show()
             elif ev.type() in (QEvent.MouseMove, QEvent.HoverMove):
                 if self.synopsis_overlay.isVisible():
                     self._set_synopsis_visible(True)
@@ -475,17 +516,27 @@ class PosterCard(QFrame):
             elif ev.type() == QEvent.Leave:
                 self._hover_timer.stop()
                 QTimer.singleShot(0, lambda: self._set_synopsis_visible(self.underMouse() or self.image_wrap.underMouse()))
+                QTimer.singleShot(0, self._update_fav_btn_visibility)
         return super().eventFilter(obj, ev)
 
     def enterEvent(self, ev):
         self._schedule_synopsis_show()
+        if self._fav_enabled:
+            self.fav_btn.raise_()
+            self.fav_btn.show()
         super().enterEvent(ev)
 
     def leaveEvent(self, ev):
         self._hover_timer.stop()
         self._set_synopsis_visible(False)
         self.synopsis_scroll.verticalScrollBar().setValue(0)
+        QTimer.singleShot(0, self._update_fav_btn_visibility)
         super().leaveEvent(ev)
+
+    def _update_fav_btn_visibility(self):
+        if self._fav_enabled and (self.underMouse() or self.image_wrap.underMouse()):
+            return
+        self.fav_btn.hide()
 
     def showEvent(self, ev):
         self._last_scroll_at = time.monotonic()
