@@ -973,3 +973,119 @@ QLabel#playerResumeToastLabel {
   font-size: 12px;
   font-weight: 600;
 }
+
+/* ── Auto-play toast ── */
+
+QFrame#playerAutoplayToast {
+  background: rgba(9, 9, 11, 0.94);
+  border: 1px solid #31323a;
+  border-radius: 14px;
+  min-width: 260px;
+}
+
+QLabel#playerAutoplayTitle {
+  color: #f0f0f4;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+QLabel#playerAutoplayCountdown {
+  color: #8b8ba0;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* ── Favorite button ── */
+
+QPushButton#favBtn {
+  background: rgba(9, 9, 13, 0.72);
+  color: #8b8ba0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  font-size: 15px;
+  padding: 0;
+}
+
+QPushButton#favBtn:hover {
+  background: rgba(214, 66, 112, 0.20);
+  color: #f0f0f4;
+  border: 1px solid rgba(214, 66, 112, 0.40);
+}
+
+QPushButton#favBtn[active="true"] {
+  background: rgba(214, 66, 112, 0.30);
+  color: #d64270;
+  border: 1px solid rgba(214, 66, 112, 0.60);
+}
+
+QPushButton#favBtn[active="true"]:hover {
+  background: rgba(214, 66, 112, 0.42);
+  color: #e8567e;
+  border: 1px solid rgba(214, 66, 112, 0.80);
+}
+
+/* ── PiP button (top bar) ── */
+
+QPushButton#playerPipBtn {
+  background: transparent;
+  color: #d4d4d8;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 0 6px;
+}
+
+QPushButton#playerPipBtn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+QPushButton#playerPipBtn:pressed {
+  background: rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* ── PiP window ── */
+
+QWidget#pipBar {
+  background: rgba(10, 10, 14, 0.96);
+  border-top: 1px solid #27272a;
+}
+
+QWidget#pipVideoSurface {
+  background: #000000;
+}
+
+QPushButton#pipExpandBtn {
+  background: transparent;
+  color: #d4d4d8;
+  border: 1px solid #31323a;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 0 10px;
+}
+
+QPushButton#pipExpandBtn:hover {
+  background: #27272a;
+  color: #ffffff;
+  border: 1px solid #4b5563;
+}
+
+QPushButton#pipCloseBtn {
+  background: transparent;
+  color: #71717a;
+  border: 1px solid #31323a;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 0;
+}
+
+QPushButton#pipCloseBtn:hover {
+  background: rgba(214, 66, 112, 0.20);
+  color: #d64270;
+  border: 1px solid rgba(214, 66, 112, 0.50);
+}
