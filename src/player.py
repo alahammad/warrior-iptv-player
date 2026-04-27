@@ -81,6 +81,115 @@ def _mpv_log_handler(level: str, prefix: str, text: str) -> None:
     _mpv_log.log(_MPV_LEVELS.get(level, logging.INFO), "%s: %s", prefix, text.rstrip())
 
 
+class _PipWindow(QWidget):
+    expand_requested = Signal()
+    closed_pip = Signal()
+
+    _PIP_W = 400
+    _PIP_H = 254
+
+    def __init__(self, parent=None):
+        super().__init__(
+            parent,
+            Qt.Tool | Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint,
+        )
+        self.setAttribute(Qt.WA_DeleteOnClose, False)
+        self.setWindowTitle("Picture in Picture")
+        self.setFixedSize(self._PIP_W, self._PIP_H)
+        self._mpv = None
+        self._drag_pos = None
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self.video = QWidget(self)
+        self.video.setObjectName("pipVideoSurface")
+        self.video.setAttribute(Qt.WA_NativeWindow)
+        layout.addWidget(self.video, 1)
+
+        bar = QWidget(self)
+        bar.setObjectName("pipBar")
+        bar_layout = QHBoxLayout(bar)
+        bar_layout.setContentsMargins(8, 4, 8, 4)
+        bar_layout.setSpacing(6)
+
+        self.expand_btn = QPushButton("⛶ Expand", bar)
+        self.expand_btn.setObjectName("pipExpandBtn")
+        self.expand_btn.setFixedHeight(26)
+        self.expand_btn.setCursor(Qt.PointingHandCursor)
+        self.expand_btn.clicked.connect(self.expand_requested.emit)
+
+        self.close_btn = QPushButton("✕", bar)
+        self.close_btn.setObjectName("pipCloseBtn")
+        self.close_btn.setFixedSize(26, 26)
+        self.close_btn.setCursor(Qt.PointingHandCursor)
+        self.close_btn.clicked.connect(self.closed_pip.emit)
+
+        bar_layout.addWidget(self.expand_btn, 1)
+        bar_layout.addWidget(self.close_btn)
+        layout.addWidget(bar)
+
+    def start_mpv(self, url: str, pos: float):
+        if not MPV_AVAILABLE:
+            return
+        opts: dict = dict(
+            wid=int(self.video.winId()),
+            log_handler=_mpv_log_handler,
+            input_default_bindings=False,
+            osc=False,
+            hwdec="auto",
+            network_timeout=15,
+            user_agent="Mozilla/5.0",
+        )
+        if sys.platform == "darwin":
+            opts["vo"] = "gpu"
+            opts["gpu_context"] = "cocoa"
+        self._mpv = mpv.MPV(**opts)
+        self._mpv.play(url)
+        self._mpv["pause"] = False
+        if pos > 0:
+            QTimer.singleShot(800, lambda: self._seek_to(pos))
+
+    def _seek_to(self, pos: float):
+        if self._mpv is not None:
+            try:
+                self._mpv.command("seek", f"{pos:.3f}", "absolute+exact")
+            except Exception:
+                pass
+
+    def get_position(self) -> float:
+        if self._mpv is None:
+            return 0.0
+        try:
+            val = self._mpv.time_pos
+            return float(val or 0.0)
+        except Exception:
+            return 0.0
+
+    def dispose_mpv(self):
+        if self._mpv is not None:
+            try:
+                self._mpv.terminate()
+            except Exception:
+                pass
+            self._mpv = None
+
+    def mousePressEvent(self, ev):
+        if ev.button() == Qt.LeftButton:
+            self._drag_pos = ev.globalPosition().toPoint() - self.pos()
+        super().mousePressEvent(ev)
+
+    def mouseMoveEvent(self, ev):
+        if ev.buttons() == Qt.LeftButton and self._drag_pos is not None:
+            self.move(ev.globalPosition().toPoint() - self._drag_pos)
+        super().mouseMoveEvent(ev)
+
+    def mouseReleaseEvent(self, ev):
+        self._drag_pos = None
+        super().mouseReleaseEvent(ev)
+
+
 class MpvPlayerOverlay(QWidget):
     closed = Signal()
     SEEK_SCALE = 1000
@@ -117,6 +226,11 @@ class MpvPlayerOverlay(QWidget):
         self._resume_pos = 0.0
         self._resume_applied = False
         self._on_position_save = None
+        self._autoplay_triggered = False
+        self._autoplay_countdown = 0
+        self._pip_window = None
+        self._pip_playlist: list[dict] = []
+        self._pip_index = 0
         self.setFocusPolicy(Qt.StrongFocus)
 
         self._controls_timer = QTimer(self)
@@ -141,6 +255,10 @@ class MpvPlayerOverlay(QWidget):
         self._toast_timer.setInterval(3800)
         self._toast_timer.timeout.connect(self._hide_resume_toast)
 
+        self._autoplay_timer = QTimer(self)
+        self._autoplay_timer.setInterval(1000)
+        self._autoplay_timer.timeout.connect(self._tick_autoplay)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -158,6 +276,17 @@ class MpvPlayerOverlay(QWidget):
         top.addWidget(self.title_label)
 
         top.addStretch()
+
+        self.pip_btn = self._make_icon_button(
+            "pip",
+            self._enter_pip,
+            object_name="playerPipBtn",
+            button_size=QSize(48, 38),
+            icon_size=QSize(16, 16),
+            tooltip="Picture in picture",
+            fallback="PiP",
+        )
+        top.addWidget(self.pip_btn)
 
         self.close_btn = self._make_icon_button(
             "close",
@@ -208,6 +337,34 @@ class MpvPlayerOverlay(QWidget):
         self._restart_btn.clicked.connect(self._restart_from_beginning)
         toast_row.addWidget(self._restart_btn)
         self.resume_toast.hide()
+
+        self.autoplay_toast = QFrame(self)
+        self.autoplay_toast.setObjectName("playerAutoplayToast")
+        ap_outer = QVBoxLayout(self.autoplay_toast)
+        ap_outer.setContentsMargins(14, 12, 14, 12)
+        ap_outer.setSpacing(8)
+        self._autoplay_title_label = QLabel("", self.autoplay_toast)
+        self._autoplay_title_label.setObjectName("playerAutoplayTitle")
+        ap_outer.addWidget(self._autoplay_title_label)
+        ap_btns = QHBoxLayout()
+        ap_btns.setSpacing(8)
+        self._autoplay_countdown_label = QLabel("", self.autoplay_toast)
+        self._autoplay_countdown_label.setObjectName("playerAutoplayCountdown")
+        ap_btns.addWidget(self._autoplay_countdown_label, 1)
+        self._autoplay_play_btn = QPushButton("Play Now", self.autoplay_toast)
+        self._autoplay_play_btn.setObjectName("chip")
+        self._autoplay_play_btn.setFixedHeight(26)
+        self._autoplay_play_btn.setCursor(Qt.PointingHandCursor)
+        self._autoplay_play_btn.clicked.connect(self._autoplay_now)
+        ap_btns.addWidget(self._autoplay_play_btn)
+        self._autoplay_cancel_btn = QPushButton("Cancel", self.autoplay_toast)
+        self._autoplay_cancel_btn.setObjectName("chip")
+        self._autoplay_cancel_btn.setFixedHeight(26)
+        self._autoplay_cancel_btn.setCursor(Qt.PointingHandCursor)
+        self._autoplay_cancel_btn.clicked.connect(self._cancel_autoplay)
+        ap_btns.addWidget(self._autoplay_cancel_btn)
+        ap_outer.addLayout(ap_btns)
+        self.autoplay_toast.hide()
 
         self.bottom_bar = QWidget(self)
         self.bottom_bar.setObjectName("playerControlsBar")
@@ -427,6 +584,9 @@ class MpvPlayerOverlay(QWidget):
         self._set_button_metrics(self.fs_btn, primary=False, compact=compact)
         self.close_btn.setFixedSize(QSize(42, 34) if compact else QSize(48, 38))
         self.close_btn.setIconSize(QSize(14, 14) if compact else QSize(16, 16))
+        self.pip_btn.setFixedSize(QSize(42, 34) if compact else QSize(48, 38))
+        self.pip_btn.setIconSize(QSize(14, 14) if compact else QSize(16, 16))
+        self.pip_btn.setVisible(not self._is_live)
         self.rate_btn.setFixedHeight(40 if compact else 44)
         self.rate_btn.setFixedWidth(58 if compact else 64)
         self.seek_row.setSpacing(8 if compact else 12)
@@ -751,6 +911,12 @@ class MpvPlayerOverlay(QWidget):
     ) -> bool:
         if not MPV_AVAILABLE:
             return False
+        # Close any active PiP when starting new playback
+        if self._pip_window is not None:
+            self._pip_window.dispose_mpv()
+            self._pip_window.deleteLater()
+            self._pip_window = None
+        self._reset_autoplay()
         player = self._ensure_mpv()
         if player is None:
             return False
@@ -825,6 +991,7 @@ class MpvPlayerOverlay(QWidget):
     def _play_at(self, idx: int):
         if not (0 <= idx < len(self._playlist)):
             return
+        self._reset_autoplay()
         self._save_position()
         self._on_position_save = None  # no callback for subsequent playlist items
         self._resume_pos = 0.0
@@ -921,6 +1088,17 @@ class MpvPlayerOverlay(QWidget):
             blocker = QSignalBlocker(self.seek_slider)
             self.seek_slider.setValue(slider_value)
             del blocker
+
+        # Auto-play next episode countdown
+        if (
+            not self._autoplay_triggered
+            and self._duration > 0
+            and time_pos > 0
+            and time_pos >= self._duration - 15
+            and len(self._playlist) > 1
+            and self._index < len(self._playlist) - 1
+        ):
+            self._start_autoplay_countdown()
 
     def _on_seek_pressed(self):
         self._seeking = True
@@ -1036,13 +1214,133 @@ class MpvPlayerOverlay(QWidget):
         y = self._top_bar_height + 16
         self.resume_toast.move(max(8, x), max(self._top_bar_height + 4, y))
 
+    # ── Auto-play next episode ────────────────────────────────────
+
+    def _start_autoplay_countdown(self):
+        self._autoplay_triggered = True
+        next_item = self._playlist[self._index + 1]
+        next_title = next_item.get("title", "Next episode")
+        self._autoplay_title_label.setText(f"Up next: {next_title}")
+        self._autoplay_countdown = 10
+        self._autoplay_countdown_label.setText(f"Playing in {self._autoplay_countdown}s")
+        self.autoplay_toast.adjustSize()
+        self._reposition_autoplay_toast()
+        self.autoplay_toast.show()
+        self.autoplay_toast.raise_()
+        self._autoplay_timer.start()
+
+    def _tick_autoplay(self):
+        self._autoplay_countdown -= 1
+        self._autoplay_countdown_label.setText(f"Playing in {self._autoplay_countdown}s")
+        if self._autoplay_countdown <= 0:
+            self._autoplay_now()
+
+    def _autoplay_now(self):
+        self._cancel_autoplay()
+        self.play_next()
+
+    def _cancel_autoplay(self):
+        self._autoplay_timer.stop()
+        self.autoplay_toast.hide()
+
+    def _reset_autoplay(self):
+        self._autoplay_triggered = False
+        self._cancel_autoplay()
+
+    def _reposition_autoplay_toast(self):
+        self.autoplay_toast.adjustSize()
+        w = self.autoplay_toast.width()
+        h = self.autoplay_toast.height()
+        bar_h = self._bottom_bar_height if self._controls_visible else 0
+        x = self.width() - w - 20
+        y = self.height() - bar_h - h - 16
+        self.autoplay_toast.move(max(8, x), max(8, y))
+
+    # ── Picture-in-picture ────────────────────────────────────────
+
+    def _enter_pip(self):
+        if self._mpv is None or self._is_live:
+            return
+        if not (self._playlist and 0 <= self._index < len(self._playlist)):
+            return
+        pos = self._get_mpv_number("time-pos")
+        item = self._playlist[self._index]
+        url = item["url"]
+
+        self._save_position()
+
+        pip = _PipWindow(self.window())
+        pip.expand_requested.connect(self._exit_pip_expand)
+        pip.closed_pip.connect(self._exit_pip_close)
+
+        screen = self.window().screen() if self.window() else None
+        if screen:
+            geo = screen.availableGeometry()
+            pip.move(geo.right() - pip.width() - 24, geo.bottom() - pip.height() - 48)
+
+        self._pip_window = pip
+        self._pip_playlist = list(self._playlist)
+        self._pip_index = self._index
+
+        self._hide_for_pip()
+        pip.show()
+        pip.start_mpv(url, pos)
+
+    def _exit_pip_expand(self):
+        if self._pip_window is None:
+            return
+        pos = self._pip_window.get_position()
+        playlist = self._pip_playlist
+        index = self._pip_index
+        self._pip_window.dispose_mpv()
+        self._pip_window.deleteLater()
+        self._pip_window = None
+        if playlist and 0 <= index < len(playlist):
+            item = playlist[index]
+            self.show_and_play(
+                item["url"], item.get("title", ""), False,
+                playlist, index, resume_pos=pos,
+                on_position_save=self._on_position_save,
+            )
+
+    def _exit_pip_close(self):
+        if self._pip_window is None:
+            return
+        self._pip_window.dispose_mpv()
+        self._pip_window.deleteLater()
+        self._pip_window = None
+        self.closed.emit()
+
+    def _hide_for_pip(self):
+        self._controls_timer.stop()
+        self._position_timer.stop()
+        self._save_timer.stop()
+        self._toast_timer.stop()
+        self._autoplay_timer.stop()
+        self._save_position()
+        self._hide_resume_toast()
+        self._cancel_autoplay()
+        if self._mpv is not None:
+            try:
+                self._mpv.command("stop")
+            except Exception:
+                pass
+        self._dispose_mpv()
+        self.hide()
+
     def stop_and_hide(self):
         self._controls_timer.stop()
         self._position_timer.stop()
         self._save_timer.stop()
         self._toast_timer.stop()
+        self._autoplay_timer.stop()
         self._save_position()
         self._hide_resume_toast()
+        self._cancel_autoplay()
+        if self._pip_window is not None:
+            self._pip_window.dispose_mpv()
+            self._pip_window.deleteLater()
+            self._pip_window = None
         self._playlist = []
         self._index = 0
         if self._mpv is not None:
@@ -1127,6 +1425,8 @@ class MpvPlayerOverlay(QWidget):
         self._reposition_loading_panel()
         if self.resume_toast.isVisible():
             self._reposition_resume_toast()
+        if self.autoplay_toast.isVisible():
+            self._reposition_autoplay_toast()
         if self.seek_preview.isVisible():
             self._show_seek_preview(self.seek_slider.value())
 
