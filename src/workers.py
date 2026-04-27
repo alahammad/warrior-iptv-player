@@ -217,20 +217,12 @@ class _ImageRunner(QRunnable):
 
             raw = QByteArray(r.content)
             img = QImage()
-            if self.cache_size:
-                buf = QBuffer()
-                buf.setData(raw)
-                buf.open(QIODevice.ReadOnly)
-                reader = QImageReader(buf)
-                source_size = reader.size()
-                if source_size.isValid():
-                    source = QSize(source_size.width(), source_size.height())
-                    target = QSize(*self.cache_size)
-                    scaled = source.scaled(target, Qt.KeepAspectRatio)
-                    reader.setScaledSize(scaled)
-                img = reader.read()
-            if img.isNull():
-                img.loadFromData(raw)
+            img.loadFromData(raw)
+            
+            if not img.isNull() and self.cache_size:
+                target = QSize(*self.cache_size)
+                img = img.scaled(target, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                
             if _shutting_down:
                 return
             self.signals.emit_done(img)
